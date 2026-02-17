@@ -18,4 +18,8 @@ client.on("message", (message) => {
   handleMessage(message, client);
 });
 
+client.on("message_create", (message) => {
+  handleMessage(message, client);
+});
+
 client.initialize();

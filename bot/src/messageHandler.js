@@ -50,7 +50,7 @@ function printRequest(userId, messageBody, reply = '') {
 
 async function handleMessage(message, client) {
 
-  if (message.fromMe) return;
+  // if (message.fromMe) return;
   if (message.type !== "chat") return;
   if (!message.body?.startsWith(requestCharacter)) return;
 
@@ -59,7 +59,7 @@ async function handleMessage(message, client) {
 
   if (!isAuthorized(userId)) {
     printRequest(userId, messageBody);
-    await client.sendMessage(message.from, "Você não tem permissão para usar o BOT");
+    await client.sendMessage(message.from, "Você não tem permissão para usar o BOT.");
     return;
   }
 
@@ -77,7 +77,7 @@ async function handleMessage(message, client) {
 
   } catch (error) {
     console.error("Erro: ", error);
-    await client.sendMessage(message.from, "Erro ao processar mensagem");
+    await client.sendMessage(message.from, "Erro ao processar mensagem.");
   }
 }
 

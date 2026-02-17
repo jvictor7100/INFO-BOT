@@ -13,7 +13,7 @@ async function sendToPython(message, userId, status) {
 
   } catch (error) {
     console.error("Python API error:", error.response?.data);
-    return "Erro interno";
+    return "Erro interno.";
   }
 }
 

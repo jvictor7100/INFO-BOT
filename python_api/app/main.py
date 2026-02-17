@@ -1,6 +1,6 @@
 from fastapi import FastAPI
-from routes import chat, health
-from config import settings
+from app.routes import chat, health
+from app.config import settings
 
 app = FastAPI(title=f"{settings.BOT_NAME} API")
 
