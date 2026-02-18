@@ -1,5 +1,7 @@
 from app.services.database import create_task, list_tasks, complete_task, delete_task
 from datetime import datetime
+import shlex
+import dateparser
 
 standardResponse = 'Não foi possível executar esse comando.'
 
@@ -8,90 +10,208 @@ commands = {
     'list_tasks': 'ls',
     'complete_task': 'complete',
     'delete_task': 'del',
+    'help': 'help'
 }
 
-def process_user_message(user_id: str, message: str) -> str:
-    def get_task_id_by_index(user_id: str, index: int):
-        tasks = list_tasks(user_id)
-        task_id = None
 
-        if index >= 1 and index <= len(tasks):
-            task_id = tasks[index - 1]['id']
+def handle_help(user_id, parts):
+    return (
+        "🤖 *Guia de Uso do INFO-BOT*\n\n"
+        "📌 *Criar tarefa*\n"
+        f'Formato: {commands["create_task"]} "[descrição da tarefa]" [data opcional]\n\n'
+        "Exemplos:\n"
+        f'{commands["create_task"]} "Estudar matemática"\n'
+        f'{commands["create_task"]} "Prova de Tufão" 25/02/2026\n'
+        f'{commands["create_task"]} "Trabalho de Geografia" amanhã\n'
+        f'{commands["create_task"]} "Atividade de filosofia" em 3 dias\n\n'
+        "📋 *Listar tarefas*\n"
+        f'Formato: {commands["list_tasks"]}\n\n'
+        "✅ *Marcar como concluída*\n"
+        f'Formato: {commands["complete_task"]} [NÚMERO]\n\n'
+        f'Ex.: {commands["complete_task"]} 1\n\n'
+        "🗑️ *Remover tarefa*\n"
+        f'Formato: {commands["delete_task"]} [NÚMERO]\n\n'
+        f'Ex.: {commands["delete_task"]} 2'
+    )
 
-        return task_id
-    
-    response = ''
 
-    request = message.strip().lower().split()
+def parse_date(date_str: str):
 
-    if not request:
-        return standardResponse
-
-    command = request[0]
+    if not date_str:
+        return None
 
     try:
-        if command == commands['create_task']:
-            # Exemplo:
-            # addtask estudar_python 2026-02-20T18:00:00
+        return datetime.strptime(date_str, "%d/%m/%Y").date()
+    except ValueError:
+        pass
 
-            if len(request) < 3:
-                return f"Formato: {commands['create_task']} <descricao> <data_iso>"
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d").date()
+    except ValueError:
+        pass
 
-            # TO-DO: Pedir a descrição entre aspas
-            # TO-DO: Facilitar a inserção da data de expiração
-            description = request[1]
-            expiry_date = datetime.fromisoformat(request[2])
+    parsed = dateparser.parse(date_str, languages=['pt'])
 
-            status = create_task(user_id, description, expiry_date)
-            response = "✅ Tarefa criada com sucesso."
+    return parsed.date() if parsed else None
 
-        elif command == commands['list_tasks']:
-            tasks = list_tasks(user_id)
 
-            if not tasks:
-                return "📭 Você não tem tarefas pendentes."
+def extract_parts(message: str):
+    try:
+        return shlex.split(message)
+    except ValueError:
+        return None
+    
 
-            lines = []
-            for index, task in enumerate(tasks, start=1):
-                lines.append(
-                    f"{index} - {task['description']} (Expira: {task['expiry_date']})"
-                )
+def handle_addtask(user_id, parts):
+    if len(parts) < 2:
+        return f'Use: {commands["create_task"]} "descrição da tarefa" [data opcional]'
 
-            response = "\n".join(lines)
+    description = parts[1].strip()
 
-        elif command == commands['complete_task']:
-            if len(request) < 2:
-                return f"Formato: {commands['complete_task']} <índice>"
+    if not description:
+        return "A descrição da tarefa não pode estar vazia."
 
-            index = int(request[1])
-            task_id = get_task_id_by_index(user_id, index)
+    due_date = None
 
-            if not task_id:
-                return "❌ Índice inválido."
+    if len(parts) > 2:
+        date_text = " ".join(parts[2:])
+        due_date = parse_date(date_text)
 
-            status = complete_task(task_id)
-            response = "✅ Tarefa marcada como concluída."
+        if not due_date:
+            return "❌ Data inválida."
 
-        elif command == commands['delete_task']:
-            if len(request) < 2:
-                return f"Formato: {commands['delete_task']} <índice>"
-            
-            index = int(request[1])
-            task_id = get_task_id_by_index(user_id, index)
+    try:
+        data = create_task(user_id, description, due_date=due_date)
 
-            if not task_id:
-                return "❌ Índice inválido."
-            
-            status = delete_task(task_id)
-            response = status['message']
+        if not data:
+            return "❌ Não foi possível criar a tarefa."
 
+        if due_date:
+            return f"✅ Tarefa criada com sucesso!\n\n📌 {description}\n📅 Vence em: {due_date.strftime('%d/%m/%Y')}"
         else:
-            response = standardResponse
+            return f"✅ Tarefa criada com sucesso!\n\n📌 {description}\n📅 Vence em: [SEM VENCIMENTO]"
 
     except Exception:
-        response = "Erro ao executar comando."
+        return "❌ Erro ao criar tarefa."
 
-    return response
+
+def handle_list(user_id, parts):
+    try:
+        tasks = list_tasks(user_id)
+
+        if not tasks:
+            return "📭 Você não possui tarefas cadastradas."
+
+        response_lines = ["📋 Suas tarefas:\n"]
+
+        for index, task in enumerate(tasks, start=1):
+            status = "✅" if task.get("completed") else "⏳"
+
+            description = task.get("description")
+
+            due_date = task.get("due_date")
+            if due_date:
+                due_date = datetime.fromisoformat(due_date).strftime("%d/%m/%Y")
+                line = f"{index}. {status} {description} (📅 {due_date})"
+            else:
+                line = f"{index}. {status} {description}"
+
+            response_lines.append(line)
+
+        return "\n".join(response_lines)
+
+    except Exception:
+        return "❌ Erro ao listar tarefas."
+
+
+def handle_complete(user_id, parts):
+    if len(parts) < 2:
+        return f"Use: {commands['complete_task']} [número da tarefa]"
+
+    try:
+        index = int(parts[1])
+    except ValueError:
+        return "❌ O índice deve ser um número."
+
+    tasks = list_tasks(user_id)
+
+    if not tasks:
+        return "📭 Você não possui tarefas."
+
+    if index < 1 or index > len(tasks):
+        return "❌ Índice inválido."
+
+    task = tasks[index - 1]
+    task_id = task["id"]
+
+    if task.get("completed"):
+        return "⚠️ Essa tarefa já está marcada como concluída."
+
+    try:
+        complete_task(task_id)
+        return f"🎉 Tarefa concluída!\n📌 Descrição: {task['description']}"
+
+    except Exception:
+        return "❌ Erro ao concluir tarefa."
+
+
+def handle_delete(user_id, parts):
+    if len(parts) < 2:
+        return f"Use: {commands['delete_task']} [número da tarefa]"
+
+    try:
+        index = int(parts[1])
+    except ValueError:
+        return "❌ O índice deve ser um número."
+
+    tasks = list_tasks(user_id)
+
+    if not tasks:
+        return "📭 Você não possui tarefas."
+
+    if index < 1 or index > len(tasks):
+        return "❌ Índice inválido."
+
+    task = tasks[index - 1]
+    task_id = task["id"]
+
+    try:
+        delete_task(task_id)
+        return f"🗑️ Tarefa removida!\n📌 Descrição: {task['description']}"
+
+    except Exception:
+        return "❌ Erro ao remover tarefa."
+    
+
+def process_user_message(user_id, message: str) -> str:
+    if not message:
+        return standardResponse
+
+    parts = extract_parts(message)
+
+    if not parts:
+        return "Erro ao processar o comando."
+
+    command = parts[0].lower()
+
+    command_map = {
+        commands['create_task']: handle_addtask,
+        commands['list_tasks']: handle_list,
+        commands['complete_task']: handle_complete,
+        commands['delete_task']: handle_delete,
+        commands['help']: handle_help
+    }
+
+    handler = command_map.get(command)
+
+    if not handler:
+        return "Comando não reconhecido."
+
+    try:
+        return handler(user_id, parts)
+    except Exception as e:
+        print("Erro interno: ", e)
+        return standardResponse
 
 
 def process_admin_message(user_id: str, message: str) -> str:
