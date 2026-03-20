@@ -1,27 +1,24 @@
-from app.services.database import create_task, list_tasks, complete_task, delete_task
 from datetime import datetime
-import shlex
+from pathlib import Path
 import dateparser
+import json
 
-standardResponse = 'Não foi possível executar esse comando.'
-
-commands = {
-    'create_task': 'addtask',
-    'list_tasks': 'ls',
-    'complete_task': 'complete',
-    'delete_task': 'del',
-    'help': 'help'
-}
+import app.services.task_manager.database as db
 
 
-def handle_help(user_id, parts):
+base_dir = Path(__file__).resolve().parent
+commands_file = base_dir.parent / "commands.json"
+with open(commands_file, "r", encoding="utf-8") as file:
+    commands = json.load(file)['task_manager']
+
+def handle_help():
     return (
         "🤖 *Guia de Uso do INFO-BOT*\n\n"
         "📌 *Criar tarefa*\n"
         f'Formato: {commands["create_task"]} "[descrição da tarefa]" [data opcional]\n\n'
         "Exemplos:\n"
         f'{commands["create_task"]} "Estudar matemática"\n'
-        f'{commands["create_task"]} "Prova de Tufão" 25/02/2026\n'
+        f'{commands["create_task"]} "Prova de Física" 25/02/2026\n'
         f'{commands["create_task"]} "Trabalho de Geografia" amanhã\n'
         f'{commands["create_task"]} "Atividade de filosofia" em 3 dias\n\n'
         "📋 *Listar tarefas*\n"
@@ -33,55 +30,46 @@ def handle_help(user_id, parts):
         f'Formato: {commands["delete_task"]} [NÚMERO]\n\n'
         f'Ex.: {commands["delete_task"]} 2'
     )
-
-
-def parse_date(date_str: str):
-
-    if not date_str:
-        return None
-
-    try:
-        return datetime.strptime(date_str, "%d/%m/%Y").date()
-    except ValueError:
-        pass
-
-    try:
-        return datetime.strptime(date_str, "%Y-%m-%d").date()
-    except ValueError:
-        pass
-
-    parsed = dateparser.parse(date_str, languages=['pt'])
-
-    return parsed.date() if parsed else None
-
-
-def extract_parts(message: str):
-    try:
-        return shlex.split(message)
-    except ValueError:
-        return None
     
 
-def handle_addtask(user_id, parts):
-    if len(parts) < 2:
+def handle_addtask(user_id, order):
+    def parse_date(date_str: str):
+        if not date_str:
+            return None
+
+        try:
+            return datetime.strptime(date_str, "%d/%m/%Y").date()
+        except ValueError:
+            pass
+
+        try:
+            return datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            pass
+
+        parsed = dateparser.parse(date_str, languages=['pt'])
+
+        return parsed.date() if parsed else None
+    
+    if len(order) < 2:
         return f'Use: {commands["create_task"]} "descrição da tarefa" [data opcional]'
 
-    description = parts[1].strip()
+    description = order[1].strip()
 
     if not description:
         return "A descrição da tarefa não pode estar vazia."
 
     due_date = None
 
-    if len(parts) > 2:
-        date_text = " ".join(parts[2:])
+    if len(order) > 2:
+        date_text = " ".join(order[2:])
         due_date = parse_date(date_text)
 
         if not due_date:
             return "❌ Data inválida."
 
     try:
-        data = create_task(user_id, description, due_date=due_date)
+        data = db.create_task(user_id, description, due_date=due_date)
 
         if not data:
             return "❌ Não foi possível criar a tarefa."
@@ -95,9 +83,9 @@ def handle_addtask(user_id, parts):
         return "❌ Erro ao criar tarefa."
 
 
-def handle_list(user_id, parts):
+def handle_list(user_id):
     try:
-        tasks = list_tasks(user_id)
+        tasks = db.list_tasks(user_id)
 
         if not tasks:
             return "📭 Você não possui tarefas cadastradas."
@@ -124,16 +112,16 @@ def handle_list(user_id, parts):
         return "❌ Erro ao listar tarefas."
 
 
-def handle_complete(user_id, parts):
-    if len(parts) < 2:
+def handle_complete(user_id, order):
+    if len(order) < 2:
         return f"Use: {commands['complete_task']} [número da tarefa]"
 
     try:
-        index = int(parts[1])
+        index = int(order[1])
     except ValueError:
         return "❌ O índice deve ser um número."
 
-    tasks = list_tasks(user_id)
+    tasks = db.list_tasks(user_id)
 
     if not tasks:
         return "📭 Você não possui tarefas."
@@ -148,7 +136,7 @@ def handle_complete(user_id, parts):
         return "⚠️ Essa tarefa já está marcada como concluída."
 
     try:
-        complete_task(task_id)
+        db.complete_task(task_id)
         return f"🎉 Tarefa concluída!\n📌 Descrição: {task['description']}"
 
     except Exception:
@@ -164,7 +152,7 @@ def handle_delete(user_id, parts):
     except ValueError:
         return "❌ O índice deve ser um número."
 
-    tasks = list_tasks(user_id)
+    tasks = db.list_tasks(user_id)
 
     if not tasks:
         return "📭 Você não possui tarefas."
@@ -176,48 +164,8 @@ def handle_delete(user_id, parts):
     task_id = task["id"]
 
     try:
-        delete_task(task_id)
+        db.delete_task(task_id)
         return f"🗑️ Tarefa removida!\n📌 Descrição: {task['description']}"
 
     except Exception:
         return "❌ Erro ao remover tarefa."
-    
-
-def process_user_message(user_id, message: str) -> str:
-    if not message:
-        return standardResponse
-
-    parts = extract_parts(message)
-
-    if not parts:
-        return "Erro ao processar o comando."
-
-    command = parts[0].lower()
-
-    command_map = {
-        commands['create_task']: handle_addtask,
-        commands['list_tasks']: handle_list,
-        commands['complete_task']: handle_complete,
-        commands['delete_task']: handle_delete,
-        commands['help']: handle_help
-    }
-
-    handler = command_map.get(command)
-
-    if not handler:
-        return "Comando não reconhecido."
-
-    try:
-        return handler(user_id, parts)
-    except Exception as e:
-        print("Erro interno: ", e)
-        return standardResponse
-
-
-def process_admin_message(user_id: str, message: str) -> str:
-    response = process_user_message(user_id, message)
-
-    if response == standardResponse:
-        pass
-
-    return response

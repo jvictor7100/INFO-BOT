@@ -1,6 +1,7 @@
 from supabase import create_client, Client
 from datetime import datetime
 from dotenv import load_dotenv
+from typing import Optional
 import os
 
 load_dotenv()
@@ -31,13 +32,13 @@ def create_task(user_id: str, description: str, due_date: datetime=None):
     return new_task.data
 
 
-def list_tasks(user_id: str):
+def list_tasks(user_id: Optional[str] = None):
+    query = supabase.table("tasks").select("*")
 
-    tasks = supabase.table("tasks") \
-        .select("*") \
-        .eq("user_id", user_id) \
-        .order("due_date") \
-        .execute()
+    if user_id:
+        query = query.eq("user_id", user_id)
+
+    tasks = query.order("due_date").execute()
 
     return tasks.data
 

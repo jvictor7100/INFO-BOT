@@ -1,0 +1,9 @@
+{
+    "task_manager": {
+        "create_task": "addtask",
+        "list_tasks": "ls",
+        "complete_task": "complete",
+        "delete_task": "del",
+        "help": "help"
+    }
+}
